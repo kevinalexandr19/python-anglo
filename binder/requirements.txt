@@ -6,6 +6,7 @@ numba==0.53.1
 seaborn==0.11.2
 ipywidgets==7.7.2
 SQLAlchemy==1.4.23
+xlwings==0.24.2
 plotly==5.4.0
 mplstereonet==0.6.2
 pyrolite==0.3.2

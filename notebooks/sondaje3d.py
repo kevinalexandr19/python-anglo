@@ -1,11 +1,12 @@
-####
-#### SONDAJE 3D
-#### Módulo para visualizar información de sondajes en 3D
-#### Nota: es importante validar los datos previamente para evitar errores en la visualización
+# -*- coding: utf-8 -*-
+# ###
+# ### SONDAJE 3D
+# ### Módulo para visualizar información de sondajes en 3D
+# ### Nota: es importante validar los datos previamente para evitar errores en la visualización
 
-#### Copyright 2022, kevinalexandr19
-#### This software may be modified and distributed under the terms of the MIT license.
-#### See the LICENSE file for details.
+# ### Copyright 2022, kevinalexandr19
+# ### This software may be modified and distributed under the terms of the MIT license.
+# ### See the LICENSE file for details.
 
 
 import pandas as pd
@@ -59,7 +60,6 @@ class DrillData:
         self.has_points = False
         self.feature = None
         self.feature_points = None
-        self.trajectory = None
         
         
     def validate_columns(self, df: pd.DataFrame, name: str, columns: list, istable=False):
@@ -276,6 +276,155 @@ class DrillData:
         xmin, xmax = round(collar["X"].min(), -3) - 1000, round(collar["X"].max(), -3) + 1000
         ymin, ymax = round(collar["Y"].min(), -3) - 1000, round(collar["Y"].max(), -3) + 1000
         zmin, zmax = round(collar["Z"].min(), -3) - 1000, round(collar["Z"].max(), -3) + 1000
+        
+        # Visualización 3D en Plotly
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter3d(x=collar["X"], y=collar["Y"], z=collar["Z"], text=collar["ID"], name="Collar",
+                                   legendgroup="drillhole", legendgrouptitle_text="Drillhole",
+                                   mode="markers+text", marker=dict(size=1, color="lightgray"), textfont=dict(size=7, color="white")))
+        
+        fig.add_trace(go.Scatter3d(x=points["X"], y=points["Y"], z=points["Z"], name="Path",
+                                   legendgroup="drillhole", legendgrouptitle_text="Drillhole",
+                                   mode="lines", line=dict(width=0.8, color="lightgray"), connectgaps=False))
+        
+        if self.feature_dtype == "categoric":
+            for value in points[feature].unique():
+                df = points[points[feature] == value]
+                fig.add_trace(go.Scatter3d(x=df["X"], y=df["Y"], z=df["Z"], name=value,
+                                           legendgroup="feature", legendgrouptitle_text=feature,
+                                           mode="lines", connectgaps=False,
+                                           line=dict(width=7)
+                                          )
+                             )
+        elif self.feature_dtype == "numeric":
+            fig.add_trace(go.Scatter3d(x=points["X"], y=points["Y"], z=points["Z"], name=feature, 
+                                       legendgroup="feature", legendgrouptitle_text=feature,
+                                       mode="lines", connectgaps=False,
+                                       line=dict(colorbar=dict(title=feature, x=-0.1,
+                                                               titlefont=dict(color="white"),
+                                                               tickfont=dict(color="white")
+                                                              ),
+                                                 width=7,
+                                                 color=points[feature],
+                                                 colorscale="Jet"
+                                                )
+                                      )
+                         )
+        
+        fig.update_layout(autosize=False,
+                          legend = dict(bgcolor="white", itemsizing="constant", groupclick="toggleitem"),
+                          width=1000,
+                          height=600,
+                          margin=dict(l=50,
+                                      r=50,
+                                      b=50,
+                                      t=50,
+                                      pad=4
+                                     ),
+                          paper_bgcolor="rgba(1, 1, 1, 1)",
+                          plot_bgcolor="rgba(1, 1, 1, 1)",
+                          scene = dict(xaxis_title="X",
+                                       xaxis=dict(range=[xmin, xmax], backgroundcolor="black", color="white"),
+                                       yaxis_title="Y",
+                                       yaxis=dict(range=[ymin, ymax], backgroundcolor="black", color="white"),
+                                       zaxis_title="Z",
+                                       zaxis=dict(range=[zmin, zmax], backgroundcolor="black", color="white"),
+                                       bgcolor="black"
+                                      ),
+                         )
+        
+        fig.show()
+
+        
+
+class DrillDataXYZ:
+    """    Drillhole data containing collar, survey and assay information. For drillholes with XYZ coordinates.\n
+    Parameters\n    ----------
+    table: pandas.DataFrame, contains the drillhole geological data. Columns: ID, X, Y, Z, and any combination of features.\n"""        
+        
+    def __init__(self, table: pd.DataFrame, table_name: str):
+        self.table = table.copy()
+        self.table_name = table_name
+        self.collar = None
+        self.has_points = False
+        self.feature = None
+        self.feature_points = None
+        
+        # Genera el collar a partir de la tabla
+        generate_collar()
+        
+    
+    def generate_collar(self):
+        table = self.table
+        collar = []
+        columns = list(table.columns)
+        
+        for dh in table["ID"].unique():
+            df = table[table["ID"] == dh].sort_values(by="Z")
+            row = df.iloc[0, :]
+            collar.append(list(row))
+        
+        collar = pd.DataFrame(collar, columns=columns)
+        self.collar = collar
+        
+    
+    def get_points(self, feature: str, dtype):       
+        self.feature = feature
+        self.feature_dtype = dtype
+        collar = self.collar
+        table = self.table[["ID", "X", "Y", "Z", feature]].copy()
+        holeid = self.table["ID"].unique()
+        
+        print(f"Procesando la información de {len(holeid)} sondajes. Columna: {feature}")
+        
+        points = []
+        for dh in tqdm(holeid):
+            # Información del sondaje
+            dh_collar = collar[collar["ID"] == dh].values[0][1:].astype(float)
+            dh_feature = table[table["ID"] == dh].values[:, 1:]
+        
+            # Interpolación de puntos a lo largo de todo el sondaje
+            dfrom = dh_feature[:-1, 1]
+            dto = dh_feature[1:, 1]
+            column = dh_feature[:, 2]
+        
+            if dtype == "categoric":    
+                for a, b, col  in zip(dfrom, dto, column):
+                    p1 = [float(i) for i in interpolate.splev(a, tck)]
+                    p1.append(col)
+                    p2 = [float(i) for i in interpolate.splev(b, tck)]
+                    p2.append(col)
+                    p3 = [None, None, None, col]
+                    points.extend([p1, p2, p3])      
+                    
+            elif dtype == "numeric":
+                for a, b, col in zip(dfrom, dto, column):
+                    p1 = [float(i) for i in interpolate.splev(a, tck)]
+                    p1.append(col)
+                    p2 = [float(i) for i in interpolate.splev(b, tck)]
+                    p2.append(col)
+                    points.extend([p1, p2])
+                
+                points.append([None, None, None, np.nan])
+        
+        # La información procesada se almacena en el atributo points
+        self.points = pd.DataFrame(points, columns=["X", "Y", "Z", feature])
+        self.has_points = True        
+        
+    
+    def plot_3d(self, xpad=1000, ypad=1000, zpad=1000):
+        if self.has_points == False:
+            return print("\033[1mLos puntos para la visualización aún no han sido generados a través del método get_points.\033[0m")
+        
+        collar = self.collar
+        feature = self.feature
+        points = self.points
+        
+        # Dimensiones del gráfico 3D
+        xmin, xmax = round(collar["X"].min(), -3) - xpad, round(collar["X"].max(), -3) + xpad
+        ymin, ymax = round(collar["Y"].min(), -3) - ypad, round(collar["Y"].max(), -3) + ypad
+        zmin, zmax = round(collar["Z"].min(), -3) - zpad, round(collar["Z"].max(), -3) + zpad
         
         # Visualización 3D en Plotly
         fig = go.Figure()
